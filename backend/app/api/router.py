@@ -112,8 +112,11 @@ def pack(body: PackRequest, db: Session = Depends(get_db)):
 
 
 @api_router.get("/bags", response_model=list[BagOut])
-def bags(db: Session = Depends(get_db)):
-    rows = db.scalars(select(PackBag).order_by(PackBag.route_id, PackBag.bag_index)).all()
+def bags(route_id: int | None = None, db: Session = Depends(get_db)):
+    q = select(PackBag).order_by(PackBag.route_id, PackBag.bag_index)
+    if route_id is not None:
+        q = q.where(PackBag.route_id == route_id)
+    rows = db.scalars(q).all()
     out = []
     for b in rows:
         items = db.scalars(select(BagItem).where(BagItem.bag_id == b.id)).all()
@@ -139,13 +142,19 @@ def bags(db: Session = Depends(get_db)):
 
 
 @api_router.get("/rejects", response_model=list[RejectOut])
-def rejects(db: Session = Depends(get_db)):
-    return db.scalars(select(RejectRecord).order_by(RejectRecord.id.desc())).all()
+def rejects(route_id: int | None = None, db: Session = Depends(get_db)):
+    q = select(RejectRecord).order_by(RejectRecord.id.desc())
+    if route_id is not None:
+        q = q.where(RejectRecord.route_id == route_id)
+    return db.scalars(q).all()
 
 
 @api_router.get("/weights", response_model=list[WeightOut])
-def weights(db: Session = Depends(get_db)):
-    bags = db.scalars(select(PackBag).order_by(PackBag.id)).all()
+def weights(route_id: int | None = None, db: Session = Depends(get_db)):
+    q = select(PackBag).order_by(PackBag.id)
+    if route_id is not None:
+        q = q.where(PackBag.route_id == route_id)
+    bags = db.scalars(q).all()
     out = []
     for b in bags:
         route = db.get(DeliveryRoute, b.route_id)

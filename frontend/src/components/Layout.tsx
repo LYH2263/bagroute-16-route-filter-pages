@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
+import { useRoute, withRouteFilter } from "../state/route";
 
 const stripLinks = [
   ["/pack", "装袋"],
@@ -12,7 +13,6 @@ const stripLinks = [
 ];
 
 type Stop = { id: number; route_id: number; seq: number; name: string; weight_kg: number; volume_l: number };
-type Route = { id: number; name: string };
 type Weight = {
   bag_id: number;
   bag_index: number;
@@ -25,32 +25,32 @@ type Weight = {
 
 export default function Layout() {
   const loc = useLocation();
-  const [routes, setRoutes] = useState<Route[]>([]);
-  const [rid, setRid] = useState<number | "">("");
+  const { routes, routeId, setRouteId } = useRoute();
   const [stops, setStops] = useState<Stop[]>([]);
   const [weights, setWeights] = useState<Weight[]>([]);
 
   useEffect(() => {
-    api<Route[]>("/routes").then((r) => {
-      setRoutes(r);
-      if (r[0]) setRid(r[0].id);
-    }).catch(() => {});
-  }, []);
+    if (routeId === "") {
+      setStops([]);
+      return;
+    }
+    api<Stop[]>(`/stops?route_id=${routeId}`).then(setStops).catch(() => setStops([]));
+  }, [routeId, loc.pathname]);
 
   useEffect(() => {
-    if (rid === "") return;
-    api<Stop[]>(`/stops?route_id=${rid}`).then(setStops).catch(() => setStops([]));
-  }, [rid, loc.pathname]);
-
-  useEffect(() => {
-    api<Weight[]>("/weights").then(setWeights).catch(() => setWeights([]));
+    api<Weight[]>(withRouteFilter("/weights", routeId))
+      .then(setWeights)
+      .catch(() => setWeights([]));
     const t = setInterval(() => {
-      api<Weight[]>("/weights").then(setWeights).catch(() => {});
+      api<Weight[]>(withRouteFilter("/weights", routeId))
+        .then(setWeights)
+        .catch(() => {});
     }, 10000);
     return () => clearInterval(t);
-  }, [loc.pathname]);
+  }, [routeId, loc.pathname]);
 
   const meters = useMemo(() => weights.slice(0, 10), [weights]);
+  const selectedRouteName = routes.find((r) => r.id === routeId)?.name;
 
   return (
     <div className="routeboard-shell">
@@ -65,7 +65,11 @@ export default function Layout() {
           </div>
           <label className="route-pick">
             路线
-            <select value={rid} onChange={(e) => setRid(Number(e.target.value))}>
+            <select
+              value={routeId}
+              onChange={(e) => setRouteId(e.target.value === "" ? "" : Number(e.target.value))}
+            >
+              <option value="">全部路线</option>
               {routes.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
@@ -90,8 +94,11 @@ export default function Layout() {
 
         <div className="stop-timeline" aria-label="站点时间线">
           <div className="stop-timeline-rail" />
-          {stops.length === 0 && (
-            <div className="stop-timeline-empty">选择路线后显示站点珠串</div>
+          {routeId === "" && (
+            <div className="stop-timeline-empty">当前为全部路线，选择具体路线后显示站点珠串</div>
+          )}
+          {routeId !== "" && stops.length === 0 && (
+            <div className="stop-timeline-empty">该路线暂无站点</div>
           )}
           {stops.map((s, i) => (
             <div key={s.id} className="stop-bead" style={{ zIndex: stops.length - i }}>
@@ -114,8 +121,14 @@ export default function Layout() {
           <Outlet />
         </section>
         <aside className="meter-lane" aria-label="重量体积仪表">
-          <div className="lane-eyebrow">重量 / 体积仪表</div>
-          {meters.length === 0 && <p className="meter-empty">暂无袋重数据</p>}
+          <div className="lane-eyebrow">
+            重量 / 体积仪表（{routeId === "" ? "全部路线" : (selectedRouteName ?? routeId)}）
+          </div>
+          {meters.length === 0 && (
+            <p className="meter-empty">
+              {routeId === "" ? "暂无袋重数据" : "该路线暂无袋重数据，请先执行装袋"}
+            </p>
+          )}
           {meters.map((w) => (
             <div key={w.bag_id} className="meter-block">
               <div className="meter-head">
